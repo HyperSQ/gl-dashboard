@@ -335,11 +335,11 @@ def register_callbacks(app, pkl_files, pkl_meta_map):
 
         if mom_cache is None:
             return (empty_figure('动量缓存不可用，请先运行 analysis/precompute_momentum.py'),
-                    empty_figure(), empty_figure(), empty_figure())
+                    empty_figure(), empty_figure(), empty_figure(), empty_figure())
 
         if cache_key not in mom_cache:
             return (empty_figure(f'缓存中无 {cache_key}，请运行 precompute_momentum.py'),
-                    empty_figure(), empty_figure(), empty_figure())
+                    empty_figure(), empty_figure(), empty_figure(), empty_figure())
 
         mom_sector_data = mom_cache[cache_key]
 
@@ -394,7 +394,7 @@ def register_callbacks(app, pkl_files, pkl_meta_map):
 
         if not valid_sectors:
             return (empty_figure('所有板块均无足够动量数据'),
-                    empty_figure(), empty_figure(), empty_figure())
+                    empty_figure(), empty_figure(), empty_figure(), empty_figure())
 
         # 确保选中的板块有数据，否则用第一个有效板块
         plot_sector = sel_sector if sel_sector in valid_sectors else valid_sectors[0]
