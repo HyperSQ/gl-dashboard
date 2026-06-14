@@ -63,9 +63,17 @@ def _allowed_freqs(native_freq):
 def _load_momentum_cache():
     try:
         with open(CACHE_FILE, 'rb') as f:
-            return pickle.load(f)
+            cache = pickle.load(f)
     except FileNotFoundError:
         return None
+    for k in cache:
+        for sector, sv in cache[k].items():
+            if isinstance(sv, dict) and 'dates' in sv:
+                d = sv['dates']
+                if hasattr(d, 'dtype') and d.dtype == np.dtype('int32'):
+                    cache[k][sector]['dates'] = [str(np.datetime64(int(x), 'D')) for x in d]
+                sv['momentum'] = np.array(sv['momentum'], dtype=float)
+    return cache
 
 
 def layout():

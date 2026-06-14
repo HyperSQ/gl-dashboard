@@ -81,12 +81,22 @@ def _resample(data_2d, times, freq, agg='last'):
 
 
 def _load_momentum_cache():
-    """加载预计算的动量缓存。"""
+    """加载预计算的动量缓存，转换 epoch days → date 字符串。"""
     try:
         with open(CACHE_FILE, 'rb') as f:
-            return pickle.load(f)
+            cache = pickle.load(f)
     except FileNotFoundError:
         return None
+
+    # 转换 epoch days → ISO 日期字符串
+    for k in cache:
+        for sector, sv in cache[k].items():
+            if isinstance(sv, dict) and 'dates' in sv:
+                d = sv['dates']
+                if hasattr(d, 'dtype') and d.dtype == np.dtype('int32'):
+                    cache[k][sector]['dates'] = [str(np.datetime64(int(x), 'D')) for x in d]
+                sv['momentum'] = np.array(sv['momentum'], dtype=float)
+    return cache
 
 
 def _make_ns_compare(net, mom_cache, agg_key, freq, cache_key):
