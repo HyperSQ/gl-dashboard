@@ -63,17 +63,27 @@ def _allowed_freqs(native_freq):
 def _load_momentum_cache():
     try:
         with open(CACHE_FILE, 'rb') as f:
-            cache = pickle.load(f)
+            return pickle.load(f)
     except FileNotFoundError:
         return None
-    for k in cache:
-        for sector, sv in cache[k].items():
-            if isinstance(sv, dict) and 'dates' in sv:
-                d = sv['dates']
-                if hasattr(d, 'dtype') and d.dtype == np.dtype('int32'):
-                    cache[k][sector]['dates'] = [str(np.datetime64(int(x), 'D')) for x in d]
-                sv['momentum'] = np.array(sv['momentum'], dtype=float)
-    return cache
+
+
+def _get_mom_sector_data(cache, key):
+    """从缓存取动量数据，int32 日期 → datetime 按需转换。"""
+    if cache is None or key not in cache:
+        return None
+    entry = cache[key]
+    if isinstance(entry, dict) and 'dates' in entry and 'momentum' in entry:
+        d = entry['dates']
+        dates = pd.to_datetime([str(np.datetime64(int(x), 'D')) for x in d]) if hasattr(d, 'dtype') and d.dtype == np.dtype('int32') else pd.to_datetime(d)
+        return {'dates': dates, 'momentum': np.array(entry['momentum'], dtype=float)}
+    result = {}
+    for sector, sv in entry.items():
+        if isinstance(sv, dict) and 'dates' in sv:
+            d = sv['dates']
+            dates = pd.to_datetime([str(np.datetime64(int(x), 'D')) for x in d]) if hasattr(d, 'dtype') and d.dtype == np.dtype('int32') else pd.to_datetime(sv['dates'])
+            result[sector] = {'dates': dates, 'momentum': np.array(sv['momentum'], dtype=float)}
+    return result
 
 
 def layout():
@@ -221,9 +231,9 @@ def register_callbacks(app, pkl_files, pkl_meta_map):
         agg_key = f'{universe}_{mom_type}_{formation}_H{holding}_aggregate'
         mom_vals_aligned = np.full(len(ns_times), np.nan)
         if mom_cache and agg_key in mom_cache:
-            agg = mom_cache[agg_key]
-            agg_dates = pd.to_datetime(agg['dates'])
-            agg_vals = np.array(agg['momentum'])
+            agg = _get_mom_sector_data(mom_cache, agg_key)
+            agg_dates = agg['dates']
+            agg_vals = agg['momentum']
             if freq != 'D':
                 df_a = pd.DataFrame({'v': agg_vals}, index=agg_dates)
                 grouper = pd.Grouper(freq='W-FRI') if freq == 'W' else pd.Grouper(freq='ME')

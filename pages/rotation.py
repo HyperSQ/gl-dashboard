@@ -81,22 +81,39 @@ def _resample(data_2d, times, freq, agg='last'):
 
 
 def _load_momentum_cache():
-    """加载预计算的动量缓存，转换 epoch days → date 字符串。"""
+    """加载预计算的动量缓存（保持 int32 日期和 float32 动量，不转换以节省内存）。"""
     try:
         with open(CACHE_FILE, 'rb') as f:
-            cache = pickle.load(f)
+            return pickle.load(f)
     except FileNotFoundError:
         return None
 
-    # 转换 epoch days → ISO 日期字符串
-    for k in cache:
-        for sector, sv in cache[k].items():
+
+def _get_mom_sector_data(cache, key):
+    """从缓存取 sector 动量数据，日期 int32 → datetime 按需转换。"""
+    if cache is None or key not in cache:
+        return None
+    entry = cache[key]
+    if isinstance(entry, dict) and 'dates' in entry:
+        # aggregate 格式: {dates: [...], momentum: [...]}
+        d = entry['dates']
+        if hasattr(d, 'dtype') and d.dtype == np.dtype('int32'):
+            dates = pd.to_datetime([str(np.datetime64(int(x), 'D')) for x in d])
+        else:
+            dates = pd.to_datetime(entry['dates'])
+        return {'dates': dates, 'momentum': np.array(entry['momentum'], dtype=float)}
+    else:
+        # sector 格式: {sector: {dates, momentum}}
+        result = {}
+        for sector, sv in entry.items():
             if isinstance(sv, dict) and 'dates' in sv:
                 d = sv['dates']
                 if hasattr(d, 'dtype') and d.dtype == np.dtype('int32'):
-                    cache[k][sector]['dates'] = [str(np.datetime64(int(x), 'D')) for x in d]
-                sv['momentum'] = np.array(sv['momentum'], dtype=float)
-    return cache
+                    dates = pd.to_datetime([str(np.datetime64(int(x), 'D')) for x in d])
+                else:
+                    dates = pd.to_datetime(sv['dates'])
+                result[sector] = {'dates': dates, 'momentum': np.array(sv['momentum'], dtype=float)}
+        return result
 
 
 def _make_ns_compare(net, mom_cache, agg_key, freq, cache_key):
@@ -127,9 +144,9 @@ def _make_ns_compare(net, mom_cache, agg_key, freq, cache_key):
 
     if agg_key not in mom_cache:
         return None
-    agg_md = mom_cache[agg_key]
-    agg_dates = pd.to_datetime(agg_md['dates'])
-    agg_vals = np.array(agg_md['momentum'])
+    agg_md = _get_mom_sector_data(mom_cache, agg_key)
+    agg_dates = agg_md['dates']
+    agg_vals = agg_md['momentum']
 
     if freq != 'D':
         df_a = pd.DataFrame({'v': agg_vals}, index=agg_dates)
@@ -341,7 +358,7 @@ def register_callbacks(app, pkl_files, pkl_meta_map):
             return (empty_figure(f'缓存中无 {cache_key}，请运行 precompute_momentum.py'),
                     empty_figure(), empty_figure(), empty_figure(), empty_figure())
 
-        mom_sector_data = mom_cache[cache_key]
+        mom_sector_data = _get_mom_sector_data(mom_cache, cache_key)
 
         # 对齐动量到 diff_times
         momentum_aligned = np.full((len(sectors), T - 1), np.nan)
@@ -406,7 +423,7 @@ def register_callbacks(app, pkl_files, pkl_meta_map):
         # 全市场聚合 (从缓存加载)
         agg_key = f'{cache_key}_aggregate'
         if agg_key in mom_cache:
-            agg_md = mom_cache[agg_key]
+            agg_md = _get_mom_sector_data(mom_cache, agg_key)
             agg_dates = pd.to_datetime(agg_md['dates'])
             agg_vals = np.array(agg_md['momentum'])
             if freq != 'D':
@@ -487,7 +504,7 @@ def register_callbacks(app, pkl_files, pkl_meta_map):
 
         # 全市场
         if agg_key in mom_cache:
-            agg_md2 = mom_cache[agg_key]
+            agg_md2 = _get_mom_sector_data(mom_cache, agg_key)
             agg_d2 = pd.to_datetime(agg_md2['dates'])
             agg_v2 = np.array(agg_md2['momentum'])
             if freq != 'D':
